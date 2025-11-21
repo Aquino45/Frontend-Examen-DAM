@@ -1,3 +1,4 @@
+import 'package:damfron/data/models/pedido.dart';
 import 'package:damfron/data/models/plato.dart';
 import 'package:damfron/data/models/cliente.dart';
 import 'package:damfron/data/service/api_service.dart';
@@ -6,7 +7,9 @@ import 'package:flutter/material.dart';
 
 
 class NuevoPedidoScreen extends StatefulWidget {
-  const NuevoPedidoScreen({super.key});
+final Pedido? pedidoEditar; // <--- NUEVO: Si esto no es null, estamos editando
+
+  const NuevoPedidoScreen({super.key, this.pedidoEditar});
 
   @override
   State<NuevoPedidoScreen> createState() => _NuevoPedidoScreenState();
@@ -16,12 +19,10 @@ class _NuevoPedidoScreenState extends State<NuevoPedidoScreen> {
   final _formKey = GlobalKey<FormState>();
   final ApiService _apiService = ApiService();
 
-  // Controladores y Variables de Estado
   final TextEditingController _mesaController = TextEditingController();
   int? _selectedClienteId;
   int? _selectedPlatoId;
   
-  // Listas para los Dropdowns
   List<Cliente> _clientes = [];
   List<Plato> _platos = [];
   bool _isLoading = true;
@@ -32,44 +33,64 @@ class _NuevoPedidoScreenState extends State<NuevoPedidoScreen> {
     _cargarDatos();
   }
 
-  // Cargamos Clientes y Platos al mismo tiempo para llenar las listas
   void _cargarDatos() async {
     try {
+      // Cargamos listas para los dropdowns
       final clientesData = await _apiService.getClientes();
       final platosData = await _apiService.getPlatos();
+
       setState(() {
         _clientes = clientesData;
         _platos = platosData;
+        
+        // --- LOGICA DE EDICIÓN ---
+        if (widget.pedidoEditar != null) {
+          // Si estamos editando, rellenamos los campos con los datos que vienen
+          _mesaController.text = widget.pedidoEditar!.numeroMesa.toString();
+          _selectedClienteId = widget.pedidoEditar!.clienteId;
+          _selectedPlatoId = widget.pedidoEditar!.platoId;
+        }
+        // -------------------------
+        
         _isLoading = false;
       });
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error cargando datos: $e")),
-      );
+      // Manejo de error simple
+      setState(() => _isLoading = false);
     }
   }
 
-  void _guardarPedido() async {
+  void _guardar() async {
     if (_formKey.currentState!.validate()) {
       setState(() => _isLoading = true);
       
-      bool exito = await _apiService.crearPedido(
-        _mesaController.text,
-        _selectedClienteId!,
-        _selectedPlatoId!,
-      );
+      bool exito;
+
+      if (widget.pedidoEditar == null) {
+        // MODO CREAR
+        exito = await _apiService.crearPedido(
+          _mesaController.text,
+          _selectedClienteId!,
+          _selectedPlatoId!,
+        );
+      } else {
+        // MODO EDITAR (Usamos el ID del pedido original)
+        exito = await _apiService.editarPedido(
+          widget.pedidoEditar!.id,
+          _mesaController.text,
+          _selectedClienteId!,
+          _selectedPlatoId!,
+        );
+      }
 
       setState(() => _isLoading = false);
 
-      if (mounted) { // Verificamos si la pantalla sigue activa
+      if (mounted) {
         if (exito) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("¡Pedido creado con éxito!"), backgroundColor: Colors.green),
-          );
-          Navigator.pop(context); // Volver atrás
+          Navigator.pop(context, true); // Retornamos 'true' para recargar la lista anterior
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Error al guardar el pedido"), backgroundColor: Colors.red),
+            const SnackBar(content: Text("Error al guardar"), backgroundColor: Colors.red),
           );
         }
       }
@@ -78,8 +99,11 @@ class _NuevoPedidoScreenState extends State<NuevoPedidoScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Cambiamos el título según el modo
+    final titulo = widget.pedidoEditar == null ? "Nuevo Pedido" : "Editar Pedido #${widget.pedidoEditar!.id}";
+
     return Scaffold(
-      appBar: AppBar(title: const Text("Nuevo Pedido")),
+      appBar: AppBar(title: Text(titulo), backgroundColor: Colors.orange, foregroundColor: Colors.white),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator(color: Colors.orange))
           : Padding(
@@ -88,75 +112,54 @@ class _NuevoPedidoScreenState extends State<NuevoPedidoScreen> {
                 key: _formKey,
                 child: ListView(
                   children: [
-                    const Text(
-                      "Detalles de la Orden",
-                      style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 20),
-
-                    // 1. Input MESA
+                    // Input MESA
                     TextFormField(
                       controller: _mesaController,
-                      decoration: InputDecoration(
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
                         labelText: "Número de Mesa",
-                        prefixIcon: const Icon(Icons.table_restaurant),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        prefixIcon: Icon(Icons.table_restaurant),
+                        border: OutlineInputBorder(),
                       ),
-                      validator: (value) => value!.isEmpty ? "Ingresa la mesa" : null,
+                      validator: (value) => value!.isEmpty ? "Requerido" : null,
                     ),
                     const SizedBox(height: 20),
 
-                    // 2. Dropdown CLIENTE
+                    // Dropdown CLIENTE
                     DropdownButtonFormField<int>(
-                      decoration: InputDecoration(
-                        labelText: "Seleccionar Cliente",
-                        prefixIcon: const Icon(Icons.person),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      decoration: const InputDecoration(
+                        labelText: "Cliente",
+                        prefixIcon: Icon(Icons.person),
+                        border: OutlineInputBorder(),
                       ),
                       value: _selectedClienteId,
-                      items: _clientes.map((cliente) {
-                        return DropdownMenuItem(
-                          value: cliente.id,
-                          child: Text(cliente.nombre),
-                        );
-                      }).toList(),
-                      onChanged: (value) => setState(() => _selectedClienteId = value),
-                      validator: (value) => value == null ? "Selecciona un cliente" : null,
+                      items: _clientes.map((c) => DropdownMenuItem(value: c.id, child: Text(c.nombre))).toList(),
+                      onChanged: (v) => setState(() => _selectedClienteId = v),
+                      validator: (v) => v == null ? "Requerido" : null,
                     ),
                     const SizedBox(height: 20),
 
-                    // 3. Dropdown PLATO
+                    // Dropdown PLATO
                     DropdownButtonFormField<int>(
-                      decoration: InputDecoration(
-                        labelText: "Seleccionar Plato",
-                        prefixIcon: const Icon(Icons.restaurant_menu),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      decoration: const InputDecoration(
+                        labelText: "Plato",
+                        prefixIcon: Icon(Icons.restaurant_menu),
+                        border: OutlineInputBorder(),
                       ),
                       value: _selectedPlatoId,
-                      items: _platos.map((plato) {
-                        return DropdownMenuItem(
-                          value: plato.id,
-                          // Mostramos nombre y precio en el dropdown
-                          child: Text("${plato.nombre} - S/${plato.precio}"),
-                        );
-                      }).toList(),
-                      onChanged: (value) => setState(() => _selectedPlatoId = value),
-                      validator: (value) => value == null ? "Selecciona un plato" : null,
+                      items: _platos.map((p) => DropdownMenuItem(value: p.id, child: Text(p.nombre))).toList(),
+                      onChanged: (v) => setState(() => _selectedPlatoId = v),
+                      validator: (v) => v == null ? "Requerido" : null,
                     ),
                     const SizedBox(height: 40),
 
-                    // BOTÓN GUARDAR
                     SizedBox(
                       height: 50,
                       child: ElevatedButton.icon(
-                        onPressed: _guardarPedido,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.orange,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
+                        onPressed: _guardar,
+                        style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.white),
                         icon: const Icon(Icons.save),
-                        label: const Text("CONFIRMAR PEDIDO", style: TextStyle(fontSize: 16)),
+                        label: Text(widget.pedidoEditar == null ? "CREAR" : "ACTUALIZAR"),
                       ),
                     )
                   ],

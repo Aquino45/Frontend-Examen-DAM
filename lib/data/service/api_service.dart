@@ -33,22 +33,22 @@ class ApiService {
   }
 
 
-// En ApiService...
 
-  // Nota: 'mesa' llega como String desde el formulario, aquí lo convertiremos
+
+
   Future<bool> crearPedido(String mesa, int clienteId, int platoId) async {
     
-    // Conversión segura de String a Int para la mesa
+
     int? mesaNumero = int.tryParse(mesa);
-    if (mesaNumero == null) return false; // Validación básica
+    if (mesaNumero == null) return false; 
 
     final response = await http.post(
       Uri.parse('$baseUrl/pedidos'),
       headers: {"Content-Type": "application/json"},
       body: jsonEncode({
-        "numeroMesa": mesaNumero, // <--- Enviamos número, no texto
-        "cliente_id": clienteId,  // <--- La clave exacta de tu DTO Java
-        "plato_id": platoId,      // <--- La clave exacta de tu DTO Java
+        "numeroMesa": mesaNumero, 
+        "cliente_id": clienteId,  
+        "plato_id": platoId,      
       }),
     );
 
@@ -89,5 +89,28 @@ class ApiService {
     } else {
       throw Exception('Error al cargar pedidos');
     }
+  }
+
+  Future<bool> editarPedido(int id, String mesa, int clienteId, int platoId) async {
+    int? mesaNumero = int.tryParse(mesa);
+    if (mesaNumero == null) return false;
+
+    final response = await http.put(
+      Uri.parse('$baseUrl/pedidos/$id'),
+      headers: {"Content-Type": "application/json"},
+      body: jsonEncode({
+        "numeroMesa": mesaNumero,
+        "cliente_id": clienteId,
+        "plato_id": platoId,
+      }),
+    );
+    return response.statusCode == 200;
+  }
+
+  Future<bool> eliminarPedido(int id) async {
+    final response = await http.delete(
+      Uri.parse('$baseUrl/pedidos/$id'),
+    );
+    return response.statusCode == 200 || response.statusCode == 204;
   }
 }
